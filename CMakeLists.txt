@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.6)
 project(VariableInteger)
 
-set(CMAKE_C_FLAGS "-std=c99 -DRLC_DEBUG -Werror -g")
+set(CMAKE_C_FLAGS "-std=c99 -DRLC_DEBUG -Werror -g -fopenmp")
 
 # Select all source files.
 file(GLOB_RECURSE vi_sources ./src/*.c)

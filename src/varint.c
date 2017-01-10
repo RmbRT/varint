@@ -593,6 +593,7 @@ void vi_div_mod_assign_VarInt(
 
 	for(int finished = 0; !finished;)
 	{
+
 		// dec_amnt = factor * srcb
 		VarInt dec_amnt;
 		vi_mul_create_VarInt(&dec_amnt, &factor, srcb);
@@ -1167,7 +1168,6 @@ void vi_create_from_hex_VarInt(
 	this->sign = s;
 }
 
-#define PRINT
 static int fermat(
 	VarInt const * base,
 	VarInt const * p)
@@ -1183,9 +1183,6 @@ static int fermat(
 		&temp,
 		p);
 
-#ifdef PRINT
-	char * s_exp = vi_to_string_VarInt(&temp);
-#endif
 	vi_pow_mod_assign_VarInt(
 		&temp,
 		base,
@@ -1196,27 +1193,8 @@ static int fermat(
 	// fermat = base ^ (p-1) % p
 	int check = vi_compare_VarInt(&temp, &varint_one);
 
-#ifdef PRINT
-
-	char * s_base = vi_to_string_VarInt(base);
-	char * s_p = vi_to_string_VarInt(p);
-	char * s_mod = vi_to_string_VarInt(&temp);
-#endif
 	vi_destroy_VarInt(&temp);
-#ifdef PRINT
 
-	printf(
-		"fermat(%s, %s): "
-		"%s ^ %s %% %s = %s"
-		" -> %i\n",
-		s_base, s_p,
-		s_base, s_exp, s_p, s_mod,
-		check);
-	vi_free((void**)&s_base);
-	vi_free((void**)&s_p);
-	vi_free((void**)&s_exp);
-	vi_free((void**)&s_mod);
-#endif
 	return (check == 0);
 }
 
@@ -1228,6 +1206,9 @@ int vi_is_prime_quick_VarInt(
 
 	int maybe_prime = 1;
 	VarInt n;
+
+	#pragma omp parallel
+	#pragma omp single nowait
 	for(vi_sub_create_VarInt(&n, this, &varint_one);
 		maybe_prime && vi_compare_VarInt(&n, &varint_one) > 0;
 		vi_shr_assign_VarInt(
@@ -1235,8 +1216,19 @@ int vi_is_prime_quick_VarInt(
 			&n,
 			1))
 	{
-		maybe_prime = fermat(&n, this);
+		VarInt temp_n;
+		vi_copy_create_VarInt(&temp_n, &n);
+		#pragma omp task shared(maybe_prime) firstprivate(temp_n)
+		{
+			if(maybe_prime && !fermat(&temp_n, this))
+			{
+				maybe_prime = 0;
+			}
+			vi_destroy_VarInt(&temp_n);
+		}
 	}
+
+	#pragma omp taskwait
 
 	vi_destroy_VarInt(&n);
 	return maybe_prime;
