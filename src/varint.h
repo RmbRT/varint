@@ -9,9 +9,8 @@
 extern "C" {
 #endif
 
-typedef unsigned char digit_t;
-#define DIGIT_MAX UCHAR_MAX
-#define DIGIT_MIN UCHAR_MIN
+typedef unsigned long digit_t;
+#define DIGIT_MAX ULONG_MAX
 
 typedef enum {
 	kPos,
@@ -126,6 +125,18 @@ void vi_pow_mod_create_VarInt(
 	VarInt const * exp,
 	VarInt const * mod);
 
+void vi_shr_assign_VarInt(
+	VarInt * dest,
+	VarInt const * src,
+	int distance);
+
+void vi_shl_assign_VarInt(
+	VarInt * dest,
+	VarInt const * src,
+	int distance);
+
+int vi_is_prime_quick_VarInt(
+	VarInt const * this);
 
 void vi_calloc_digit(
 	digit_t ** ptr,

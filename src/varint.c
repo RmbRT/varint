@@ -7,7 +7,8 @@
 
 static digit_t const
 	digit_one = 1,
-	digit_two = 2;
+	digit_two = 2,
+	digit_four = 4;
 static VarInt const
 	varint_one = {
 		(digit_t*)&digit_one,
@@ -21,6 +22,16 @@ static VarInt const
 		kNeg
 	}, varint_two = {
 		(digit_t*)&digit_two,
+		1,
+		1,
+		kPos
+	}, varint_zero = {
+		NULL,
+		0,
+		0,
+		kPos
+	}, varint_four = {
+		(digit_t*)&digit_four,
 		1,
 		1,
 		kPos
@@ -492,19 +503,20 @@ void vi_div_mod_create_VarInt(
 	VarInt const * srca,
 	VarInt const * srcb)
 {
-	assert(quo != NULL);
-	assert(rem != NULL);
 	assert(srca != NULL);
 	assert(srcb != NULL);
 	assert(srcb->size != 0 && "cannot divide by zero");
-	assert(quo != rem);
+	if(quo || rem)
+		assert(quo != rem);
 	assert(quo != srca);
 	assert(quo != srcb);
 	assert(rem != srca);
 	assert(rem != srcb);
 
-	vi_create_VarInt(quo);
-	vi_create_VarInt(rem);
+	if(quo)
+		vi_create_VarInt(quo);
+	if(rem)
+		vi_create_VarInt(rem);
 	vi_div_mod_assign_VarInt(quo, rem, srca, srcb);
 }
 
@@ -514,6 +526,29 @@ void vi_div_mod_assign_VarInt(
 	VarInt const * srca,
 	VarInt const * srcb)
 {
+	if(quo == NULL)
+	{
+		VarInt _quo = varint_zero;
+		vi_div_mod_assign_VarInt(
+			&_quo,
+			rem,
+			srca,
+			srcb);
+		vi_destroy_VarInt(&_quo);
+		return;
+	}
+	if(rem == NULL)
+	{
+		VarInt _rem = varint_zero;
+		vi_div_mod_assign_VarInt(
+			quo,
+			&_rem,
+			srca,
+			srcb);
+		vi_destroy_VarInt(&_rem);
+		return;
+	}
+
 	assert(quo != NULL);
 	assert(rem != NULL);
 	assert(srca != NULL);
@@ -587,7 +622,7 @@ void vi_div_mod_assign_VarInt(
 			vi_add_assign_VarInt(quo, quo, &factor);
 
 			// factor *= 2;
-			vi_add_assign_VarInt(&factor, &factor, &factor);
+			vi_shl_assign_VarInt(&factor, &factor, 1);
 
 			min_factor = 0;
 
@@ -768,17 +803,18 @@ void vi_pow_mod_assign_VarInt(
 
 	if(dest == base || dest == exp || dest == mod)
 	{
-		VarInt dest_copy;
-		vi_create_VarInt(&dest_copy);
-		vi_pow_assign_VarInt(&dest_copy, base, exp);
+		VarInt result;
+		vi_create_VarInt(&result);
+		vi_pow_mod_assign_VarInt(&result, base, exp, mod);
 		vi_destroy_VarInt(dest);
-		*dest = dest_copy;
+		*dest = result;
+		return;
 	}
 
 
 	if(!exp->size)
 	{
-		vi_copy_assign_VarInt(dest, &varint_one);
+		vi_div_mod_assign_VarInt(NULL, dest, &varint_one, mod);
 		return;
 	}
 
@@ -790,7 +826,7 @@ void vi_pow_mod_assign_VarInt(
 
 	if(vi_compare_VarInt(base, &varint_one) == 0)
 	{
-		vi_copy_assign_VarInt(dest, &varint_one);
+		vi_div_mod_assign_VarInt(NULL, dest, &varint_one, mod);
 		return;
 	}
 
@@ -802,11 +838,7 @@ void vi_pow_mod_assign_VarInt(
 
 	vi_copy_assign_VarInt(dest, &varint_one);
 	VarInt mul;
-	vi_copy_create_VarInt(&mul, base);
-
-	VarInt dummy;
-	vi_create_VarInt(&dummy);
-
+	vi_div_mod_create_VarInt(NULL, &mul, base, mod);
 
 	for(size_t d = 0; d < exp->size; d++)
 	{
@@ -815,7 +847,7 @@ void vi_pow_mod_assign_VarInt(
 			if(exp->digits[d] & (digit_t)((digit_t)1 << b))
 			{
 				vi_mul_assign_VarInt(dest, dest, &mul);
-				vi_div_mod_assign_VarInt(&dummy, dest, dest, mod);
+				vi_div_mod_assign_VarInt(NULL, dest, dest, mod);
 				if(d == exp->size - 1)
 				{
 					digit_t mask = 1;
@@ -827,12 +859,11 @@ void vi_pow_mod_assign_VarInt(
 			}
 
 			vi_mul_assign_VarInt(&mul, &mul, &mul);
-			vi_div_mod_assign_VarInt(&dummy, &mul, &mul, mod);
+			vi_div_mod_assign_VarInt(NULL, &mul, &mul, mod);
 		}
 	}
 
 	vi_destroy_VarInt(&mul);
-	vi_destroy_VarInt(&dummy);
 }
 
 void vi_pow_create_VarInt(
@@ -1134,4 +1165,179 @@ void vi_create_from_hex_VarInt(
 	}
 
 	this->sign = s;
+}
+
+#define PRINT
+static int fermat(
+	VarInt const * base,
+	VarInt const * p)
+{
+	assert(base != NULL);
+	assert(p != NULL);
+	assert(vi_compare_VarInt(base, p) < 0);
+
+
+
+	VarInt temp = varint_zero;
+	vi_dec_assign_VarInt(
+		&temp,
+		p);
+
+#ifdef PRINT
+	char * s_exp = vi_to_string_VarInt(&temp);
+#endif
+	vi_pow_mod_assign_VarInt(
+		&temp,
+		base,
+		&temp,
+		p);
+
+	// the fermat test must result in a remainder of 1, or else the number is definitely not prime.
+	// fermat = base ^ (p-1) % p
+	int check = vi_compare_VarInt(&temp, &varint_one);
+
+#ifdef PRINT
+
+	char * s_base = vi_to_string_VarInt(base);
+	char * s_p = vi_to_string_VarInt(p);
+	char * s_mod = vi_to_string_VarInt(&temp);
+#endif
+	vi_destroy_VarInt(&temp);
+#ifdef PRINT
+
+	printf(
+		"fermat(%s, %s): "
+		"%s ^ %s %% %s = %s"
+		" -> %i\n",
+		s_base, s_p,
+		s_base, s_exp, s_p, s_mod,
+		check);
+	vi_free((void**)&s_base);
+	vi_free((void**)&s_p);
+	vi_free((void**)&s_exp);
+	vi_free((void**)&s_mod);
+#endif
+	return (check == 0);
+}
+
+
+int vi_is_prime_quick_VarInt(
+	VarInt const * this)
+{
+	assert(this != NULL);
+
+	int maybe_prime = 1;
+	VarInt n;
+	for(vi_sub_create_VarInt(&n, this, &varint_one);
+		maybe_prime && vi_compare_VarInt(&n, &varint_one) > 0;
+		vi_shr_assign_VarInt(
+			&n,
+			&n,
+			1))
+	{
+		maybe_prime = fermat(&n, this);
+	}
+
+	vi_destroy_VarInt(&n);
+	return maybe_prime;
+}
+
+
+void vi_shr_assign_VarInt(
+	VarInt * dest,
+	VarInt const * src,
+	int distance)
+{
+	assert(src != NULL);
+	assert(dest != NULL);
+
+
+	dest->sign = src->sign;
+
+	if(!distance)
+	{
+		if(dest != src)
+			vi_copy_assign_VarInt(dest, src);
+		return;
+	}
+
+	if(distance < 0)
+		return vi_shl_assign_VarInt(dest, src, -distance);
+
+	static size_t const digit_bits = sizeof(digit_t) * 8;
+
+	size_t swallow = distance / digit_bits;
+	size_t rest = distance % digit_bits;
+
+
+	if(swallow >= src->size)
+	{
+		dest->sign = kPos;
+		dest->size = 0;
+		return;
+	}
+
+	if(dest != src)
+	{
+		if(dest->capacity < src->size - swallow)
+		vi_realloc_digit(
+			&dest->digits,
+			dest->capacity = src->size - swallow);
+	}
+
+	for(size_t i = 0; i + 1 < src->size - swallow; i++)
+	{
+		dest->digits[i] = (src->digits[i + swallow ] >> rest)
+						| (src->digits[i + swallow + 1] << (digit_bits - rest));
+	}
+
+	dest->digits[src->size - swallow - 1] = (src->digits[src->size - 1] >> rest);
+
+	dest->size = src->size - swallow;
+
+	if(dest->size && !dest->digits[dest->size-1])
+		--dest->size;
+
+	dest->sign = dest->size ? src->sign : kPos;
+}
+
+
+void vi_shl_assign_VarInt(
+	VarInt * dest,
+	VarInt const * src,
+	int distance)
+{
+	assert(src != NULL);
+
+	if(distance < 0)
+		return vi_shr_assign_VarInt(dest, src, -distance);
+
+	static size_t const digit_bits = sizeof(digit_t) * 8;
+
+	size_t fill = distance / digit_bits;
+	size_t rest = distance % digit_bits;
+
+	if(dest->capacity < src->size + fill + 1)
+	vi_realloc_digit(
+		&dest->digits,
+		dest->capacity = src->size + fill + 1);
+
+	dest->digits[src->size + fill] = src->digits[src->size - 1] >> (digit_bits - rest);
+
+	for(size_t i = src->size; i-->1;)
+	{
+		dest->digits[i + fill] = (src->digits[i] << rest)
+						| (src->digits[i - 1] >> (digit_bits - rest));
+	}
+
+	dest->digits[fill] = (src->digits[0] << rest);
+
+	for(size_t i = fill; i--;)
+		dest->digits[i] = 0;
+
+	dest->size = src->size + fill + 1;
+	if(dest->size && !dest->digits[dest->size-1])
+		--dest->size;
+
+	dest->sign =  src->sign;
 }

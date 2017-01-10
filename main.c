@@ -63,6 +63,17 @@ void main(
 			puts(str);
 			vi_free((void**)&str);
 			vi_destroy_VarInt(&x);
+		} else if(!strcmp(argv[1], "prime"))
+		{
+			VarInt p;
+			vi_create_from_hex_VarInt(
+				&p,
+				argv[2],
+				strlen(argv[2]));
+
+			puts(vi_is_prime_quick_VarInt(&p) ? "1":"0");
+			vi_destroy_VarInt(&p);
+
 		} else
 		{
 			fputs("invalid arguments.", stderr);
@@ -115,6 +126,11 @@ void main(
 				&result,
 				&a,
 				&b);
+		} else if(!strcmp(argv[2], "shr"))
+		{
+			vi_create_VarInt(&result);
+
+			vi_shr_assign_VarInt(&result, &a, atoi(argv[3]));
 		} else
 		{
 			fprintf(
