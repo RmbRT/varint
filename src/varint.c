@@ -1216,11 +1216,21 @@ int vi_is_prime_quick_VarInt(
 			&n,
 			1))
 	{
+#ifdef _OPENMP
 		VarInt temp_n;
 		vi_copy_create_VarInt(&temp_n, &n);
+#endif
+
 		#pragma omp task shared(maybe_prime) firstprivate(temp_n)
 		{
-			if(maybe_prime && !fermat(&temp_n, this))
+
+			if(maybe_prime && !fermat(
+#ifdef _OPENMP
+				&temp_n,
+#else
+				&n,
+#endif
+				this))
 			{
 				maybe_prime = 0;
 			}
