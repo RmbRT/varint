@@ -1234,7 +1234,9 @@ int vi_is_prime_quick_VarInt(
 			{
 				maybe_prime = 0;
 			}
+#ifdef _OPENMP
 			vi_destroy_VarInt(&temp_n);
+#endif
 		}
 	}
 
