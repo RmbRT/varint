@@ -11,6 +11,7 @@ extern "C" {
 
 typedef unsigned long digit_t;
 #define DIGIT_MAX ULONG_MAX
+#define DIGIT_BITS (sizeof(digit_t) * 8)
 
 typedef enum {
 	kPos,
@@ -34,6 +35,10 @@ void vi_create_from_hex_VarInt(
 	size_t length);
 char * vi_to_string_VarInt(
 	VarInt const * this);
+
+void vi_create_from_int_VarInt(
+	VarInt * this,
+	int value);
 
 void vi_assign_random_VarInt(
 	VarInt * this,
@@ -104,6 +109,10 @@ int vi_compare_VarInt(
 	VarInt const * srca,
 	VarInt const * srcb);
 
+int vi_abs_compare_VarInt(
+	VarInt const * srca,
+	VarInt const * srcb);
+
 void vi_pow_assign_VarInt(
 	VarInt * dest,
 	VarInt const * base,
@@ -136,6 +145,13 @@ void vi_shl_assign_VarInt(
 	int distance);
 
 int vi_is_prime_quick_VarInt(
+	VarInt const * this);
+
+void vi_next_prime_assign_VarInt(
+	VarInt * dest,
+	VarInt const * start);
+
+int vi_is_even_VarInt(
 	VarInt const * this);
 
 void vi_calloc_digit(

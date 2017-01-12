@@ -7,8 +7,7 @@
 
 static digit_t const
 	digit_one = 1,
-	digit_two = 2,
-	digit_four = 4;
+	digit_two = 2;
 static VarInt const
 	varint_one = {
 		(digit_t*)&digit_one,
@@ -20,18 +19,13 @@ static VarInt const
 		1,
 		1,
 		kNeg
-	}, varint_two = {
-		(digit_t*)&digit_two,
-		1,
-		1,
-		kPos
 	}, varint_zero = {
 		NULL,
 		0,
 		0,
 		kPos
-	}, varint_four = {
-		(digit_t*)&digit_four,
+	}, varint_two = {
+		(digit_t*)&digit_two,
 		1,
 		1,
 		kPos
@@ -46,6 +40,29 @@ void vi_create_VarInt(
 	this->size = 0;
 	this->capacity = 0;
 	this->sign = kPos;
+}
+
+void vi_create_from_int_VarInt(
+	VarInt * this,
+	int value)
+{
+	assert(this != NULL);
+
+	vi_create_VarInt(this);
+
+	if(!value)
+		return;
+
+	vi_calloc_digit(
+		&this->digits,
+		this->capacity = sizeof(int) / sizeof(digit_t));
+
+	for(size_t d = 0; d < sizeof(int) / sizeof(digit_t); d++)
+	{
+		this->digits[d] = (digit_t)(value >> (d * DIGIT_BITS));
+	}
+
+	this->sign = value >= 0 ? kPos : kNeg;
 }
 
 void vi_copy_create_VarInt(
@@ -206,8 +223,31 @@ void digit_add(
 	assert(carry != NULL);
 	assert(c_in == 0 || c_in == 1);
 
+#ifdef USE_IA
+	digit_t _carry;
+	digit_t _result;
+	// first addition
+	__asm__ volatile
+	(
+	"add %3, %0;"
+	"adc $0, %1;"
+	: "=a"(_result), "=c"(_carry)
+	: "a"(a), "r"(b), "c"(0));
+
+	digit_t carry2;
+	__asm__ volatile
+	(
+	"add %3, %0;"
+	"adc $0, %1;"
+	: "=a"(_result), "=c"(carry2)
+	: "a"(_result), "b"(c_in), "c"(0));
+
+	*out = _result;
+	*carry = (_carry || carry2);
+#else
 	*carry = (b > DIGIT_MAX - a || a+b > DIGIT_MAX - c_in) ? 1 : 0;
 	*out = a + b + c_in;
+#endif
 }
 
 void digit_sub(
@@ -221,8 +261,31 @@ void digit_sub(
 	assert(carry != NULL);
 	assert(c_in == 0 || c_in == 1);
 
+#ifdef USE_IA
+	digit_t _carry;
+	digit_t _result;
+	// first addition
+	__asm__ volatile
+	(
+	"sub %3, %0;"
+	"adc $0, %1;"
+	: "=a"(_result), "=c"(_carry)
+	: "a"(a), "r"(b), "c"(0));
+
+	digit_t carry2;
+	__asm__ volatile
+	(
+	"sub %3, %0;"
+	"adc $0, %1;"
+	: "=a"(_result), "=c"(carry2)
+	: "a"(_result), "b"(c_in), "c"(0));
+
+	*out = _result;
+	*carry = (_carry || carry2);
+#else
 	*carry = (a < b || b > DIGIT_MAX - c_in || a < b + c_in) ? 1 : 0;
 	*out = a - (b+c_in);
+#endif
 }
 
 static void internal_add_assign_VarInt(
@@ -298,8 +361,6 @@ static void internal_add_assign_VarInt(
 			carry,
 			&dest->digits[i],
 			&carry);
-		if(dest->digits[i])
-			dest->size = i+1;
 	}
 	for(size_t i = shorter->size; i < longer->size; i++)
 	{
@@ -309,14 +370,15 @@ static void internal_add_assign_VarInt(
 			carry,
 			&dest->digits[i],
 			&carry);
-		if(dest->digits[i])
-			dest->size = i+1;
 	}
 
 	if(carry)
 	{
 		dest->size = longer->size+1;
 		dest->digits[dest->size-1] = carry;
+	} else
+	{
+		dest->size = longer->size;
 	}
 }
 
@@ -329,6 +391,25 @@ static void digit_mul(
 	assert(low != NULL);
 	assert(high != NULL);
 
+#ifdef USE_IA
+	// first addition
+	#if DIGIT_MAX != UCHAR_MAX
+		__asm__ volatile
+		(
+		"mul %3"
+		: "=a"(*low), "=d"(*high)
+		: "a"(x), "r"(y));
+	#else
+		__asm__ volatile
+		(
+		"mov %2, %%al;"
+		"mul %%bl;"
+		"mov %%al, %0;"
+		"mov %%ah, %1;"
+		: "=g"(*low), "=g"(*high)
+		: "a"(x), "b"(y));
+	#endif
+#else
 	static digit_t const
 		kHalf = sizeof(digit_t) * 4;
 	static digit_t const
@@ -373,8 +454,8 @@ static void digit_mul(
 		carry2,
 		high,
 		&carry2);
-
-	assert(carry | carry2 == 0);
+#endif
+	assert((carry | carry2) == 0);
 }
 
 void vi_mul_create_VarInt(
@@ -433,6 +514,7 @@ void vi_mul_assign_VarInt(
 	dest->sign = kPos;
 	dest->size = 0;
 
+	#pragma omp parallel for shared(dest)
 	for(size_t i = 0; i < shorter->size; i++)
 	{
 		VarInt temp;
@@ -466,18 +548,11 @@ void vi_mul_assign_VarInt(
 
 				target += 2;
 
-			while(carry)
-			{
-				++target;
-				assert(target < temp.capacity);
-
-				digit_add(
-					temp.digits[target],
-					0,
-					carry,
-					&temp.digits[target],
-					&carry);
-			}
+			if(carry)
+				while(!++temp.digits[target])
+				{
+					assert(target < temp.capacity);
+				}
 
 		}
 
@@ -485,11 +560,14 @@ void vi_mul_assign_VarInt(
 			if(temp.digits[j])
 				temp.size = j + 1;
 
+		#pragma omp critical
+		{
 		// dest += temp;
 		vi_add_assign_VarInt(
 			dest,
 			dest,
 			&temp);
+		}
 
 		vi_destroy_VarInt(&temp);
 	}
@@ -574,77 +652,97 @@ void vi_div_mod_assign_VarInt(
 		return;
 	}
 
-	// quo = 0
+	// quo = 0.
 	quo->size = 0;
 
-	if(srcb->size > srca->size)
 	{
-		vi_copy_assign_VarInt(rem, srca);
-		return;
+		int abs_cmp = vi_abs_compare_VarInt(srca, srcb);
+		if(abs_cmp == 0)
+		{
+			// return +- 1 | 0.
+			rem->size = 0;
+			vi_copy_assign_VarInt(quo, &varint_one);
+			quo->sign = (srca->sign == srcb->sign)
+				? kPos
+				: kNeg;
+			return;
+		} else if(abs_cmp < 0)
+		{
+			// return 0 | srcb.
+			vi_copy_assign_VarInt(rem, srca);
+			return;
+		}
 	}
-
 
 	VarInt count_down;
 	vi_copy_create_VarInt(&count_down, srca);
-	VarInt factor;
-	vi_copy_create_VarInt(&factor, (VarInt*)&varint_one);
+	// for absolute comparison, we need the same sign.
+	count_down.sign = kPos;
 
-	int min_factor = 1;
+	// start with an initial guess of how many times bigger srca is.
+	int shift = (srca->size - srcb->size + 1) * DIGIT_BITS;
+	VarInt decrease = varint_zero;
+	vi_shl_assign_VarInt(&decrease, srcb, shift);
+	decrease.sign = kPos;
 
-	for(int finished = 0; !finished;)
+	// dummy for reuse, has to be reassigned before each use.
+	VarInt quo_inc = varint_zero;
+
+	for(;;)
 	{
+		// sanity check.
+		assert(shift >= 0);
+		assert(count_down.sign == kPos);
 
-		// dec_amnt = factor * srcb
-		VarInt dec_amnt;
-		vi_mul_create_VarInt(&dec_amnt, &factor, srcb);
+		// check whether we should continue.
+		int const compare = vi_compare_VarInt(&decrease, &count_down);
 
-		// decreased = count_down - dec_amnt;
-		VarInt decreased;
-		if(srca->sign == srcb->sign)
-			vi_sub_create_VarInt(&decreased, &count_down, &dec_amnt);
-		else
-			vi_add_create_VarInt(&decreased, &count_down, &dec_amnt);
-
-		vi_destroy_VarInt(&dec_amnt);
-
-		if(!decreased.size) // finished and no remainder?
+		if(compare == 0) // finished and no remainder?
 		{
-			// rem = 0
+			// rem = 0.
 			rem->size = 0;
 
-			// quo += factor;
-			vi_add_assign_VarInt(quo, quo, &factor);
+			// quo += 2 ^ shift.
+			vi_shl_assign_VarInt(&decrease, &varint_one, shift);
+			vi_add_assign_VarInt(quo, quo, &decrease);
 
-			finished = 1;
-		} // still not finished?
-		else if(decreased.sign == count_down.sign)
+			break;
+		} else if(compare > 0) // our current decrease amount is larget than count_down?
 		{
-			// quo += factor;
-			vi_add_assign_VarInt(quo, quo, &factor);
-
-			// factor *= 2;
-			vi_shl_assign_VarInt(&factor, &factor, 1);
-
-			min_factor = 0;
-
-			// count_down = decreased;
-			vi_copy_assign_VarInt(&count_down, &decreased);
-
-		} else if(!min_factor) // too large subtraction?
+			if(shift > 0) // we can still reduce our decrease amount.
+			{
+				--shift;
+				vi_shr_assign_VarInt(&decrease, &decrease, 1);
+			} else // we have remainder, and finished.
+			{
+				// rem = count_down.
+				vi_copy_assign_VarInt(rem, &count_down);
+				break;
+			}
+		} else // we are not yet finished.
 		{
-			// factor = 1
-			vi_copy_assign_VarInt(&factor, (VarInt*)&varint_one);
-			min_factor = 1;
-		} else // finished this one, with remainder
-		{
-			vi_copy_assign_VarInt(rem, &count_down);
-			finished = 1;
+			// count_down -= decrease.
+			vi_sub_assign_VarInt(&count_down, &count_down, &decrease);
+			// decrease >>= 1.
+			vi_shr_assign_VarInt(&decrease, &decrease, 1);
+			// quo += 1 << shift.
+			vi_shl_assign_VarInt(&quo_inc, &varint_one, shift);
+			vi_add_assign_VarInt(quo, quo, &quo_inc);
+			
+			if(shift > 0) // can we still continue?
+			{
+				--shift;
+			} else // we (possibly) have a remainder and we finished.
+			{
+				// rem = count_down.
+				vi_copy_assign_VarInt(rem, &count_down);
+
+				break;
+			}
 		}
-
-		vi_destroy_VarInt(&decreased);
 	}
 
-	vi_destroy_VarInt(&factor);
+	vi_destroy_VarInt(&decrease);
 	vi_destroy_VarInt(&count_down);
 
 	rem->sign = srca->sign;
@@ -694,26 +792,36 @@ int vi_compare_VarInt(
 			? 1
 			: -1;
 
+	int abs_cmp = vi_abs_compare_VarInt(srca, srcb);
+
+	return srca->sign == kPos
+		? abs_cmp
+		: -abs_cmp;
+
+	return 0;
+}
+
+int vi_abs_compare_VarInt(
+	VarInt const * srca,
+	VarInt const * srcb)
+{
+	assert(srca != NULL);
+	assert(srcb != NULL);
+
+	assert(srca != srcb && "did you really want to compare a varint with itself?! Tip: think it through once more.");
+
 	if(srca->size < srcb->size)
-		return srca->sign == kPos
-			? -1
-			: 1;
-	if(srca->size > srcb->size)
-		return srca->sign == kPos
-			? 1
-			: -1;
+		return -1;
+	else if(srca->size > srcb->size)
+		return 1;
 
 	for(size_t i = srca->size; i--;)
 		if(srca->digits[i] != srcb->digits[i])
 		{
 			if(srca->digits[i] < srcb->digits[i])
-				return srca->sign == kPos
-					? -1
-					: 1;
+				return -1;
 			else
-				return srca->sign == kPos
-					? 1
-					: -1;
+				return 1;
 		}
 
 	return 0;
@@ -769,16 +877,14 @@ void vi_pow_assign_VarInt(
 
 	for(size_t d = 0; d < exp->size; d++)
 	{
-		for(size_t b = 0; b < sizeof(digit_t) * 8; b++)
+		for(size_t b = 0; b < DIGIT_BITS; b++)
 		{
 			if(exp->digits[d] & (digit_t)((digit_t)1 << b))
 			{
 				vi_mul_assign_VarInt(dest, dest, &mul);
-				if(d == exp->size - 1)
+				if(d == exp->size - 1 && b != DIGIT_BITS)
 				{
-					digit_t mask = 1;
-					mask <<= b;
-					--mask;
+					digit_t mask = (1 << (b+1)) - 1;
 					if(!(exp->digits[d] & ~mask))
 						break;
 				}
@@ -843,17 +949,15 @@ void vi_pow_mod_assign_VarInt(
 
 	for(size_t d = 0; d < exp->size; d++)
 	{
-		for(size_t b = 0; b < sizeof(digit_t) * 8; b++)
+		for(size_t b = 0; b < DIGIT_BITS; b++)
 		{
 			if(exp->digits[d] & (digit_t)((digit_t)1 << b))
 			{
 				vi_mul_assign_VarInt(dest, dest, &mul);
 				vi_div_mod_assign_VarInt(NULL, dest, dest, mod);
-				if(d == exp->size - 1)
+				if(d == exp->size - 1 && b != DIGIT_BITS)
 				{
-					digit_t mask = 1;
-					mask <<= b;
-					--mask;
+					digit_t mask = (1 << (b+1)) - 1;
 					if(!(exp->digits[d] & ~mask))
 						break;
 				}
@@ -1203,6 +1307,7 @@ int vi_is_prime_quick_VarInt(
 	VarInt const * this)
 {
 	assert(this != NULL);
+	assert(this->sign == kPos);
 
 	int maybe_prime = 1;
 	VarInt n;
@@ -1221,7 +1326,7 @@ int vi_is_prime_quick_VarInt(
 		vi_copy_create_VarInt(&temp_n, &n);
 #endif
 
-		#pragma omp task shared(maybe_prime) firstprivate(temp_n)
+		#pragma omp task shared(maybe_prime)
 		{
 
 			if(maybe_prime && !fermat(
@@ -1238,6 +1343,8 @@ int vi_is_prime_quick_VarInt(
 			vi_destroy_VarInt(&temp_n);
 #endif
 		}
+
+		
 	}
 
 	#pragma omp taskwait
@@ -1291,11 +1398,17 @@ void vi_shr_assign_VarInt(
 
 	for(size_t i = 0; i + 1 < src->size - swallow; i++)
 	{
-		dest->digits[i] = (src->digits[i + swallow ] >> rest)
-						| (src->digits[i + swallow + 1] << (digit_bits - rest));
+		if(rest)
+			dest->digits[i] = (src->digits[i + swallow ] >> rest)
+							| (src->digits[i + swallow + 1] << (digit_bits - rest));
+		else
+			dest->digits[i] = src->digits[i + swallow];
 	}
 
-	dest->digits[src->size - swallow - 1] = (src->digits[src->size - 1] >> rest);
+	if(rest)
+		dest->digits[src->size - swallow - 1] = (src->digits[src->size - 1] >> rest);
+	else
+		dest->digits[src->size - swallow - 1] = (src->digits[src->size - 1]);
 
 	dest->size = src->size - swallow;
 
@@ -1322,26 +1435,67 @@ void vi_shl_assign_VarInt(
 	size_t rest = distance % digit_bits;
 
 	if(dest->capacity < src->size + fill + 1)
-	vi_realloc_digit(
-		&dest->digits,
-		dest->capacity = src->size + fill + 1);
+		vi_realloc_digit(
+			&dest->digits,
+			dest->capacity = src->size + fill + 1);
 
-	dest->digits[src->size + fill] = src->digits[src->size - 1] >> (digit_bits - rest);
+	if(rest) // might cap the shift amount, so better watch out.
+		dest->digits[src->size + fill] = src->digits[src->size - 1] >> (digit_bits - rest);
+	else
+		dest->digits[src->size + fill] = 0;
 
 	for(size_t i = src->size; i-->1;)
 	{
-		dest->digits[i + fill] = (src->digits[i] << rest)
-						| (src->digits[i - 1] >> (digit_bits - rest));
+		if(rest)
+			dest->digits[i + fill] =
+				(src->digits[i] << rest) |
+				(src->digits[i-1] >> (DIGIT_BITS - rest));
+		else
+			dest->digits[i + fill] = src->digits[i];
 	}
 
-	dest->digits[fill] = (src->digits[0] << rest);
+	if(rest)
+		dest->digits[fill] = (src->digits[0] << rest);
+	else
+		dest->digits[fill] = src->digits[0];
 
 	for(size_t i = fill; i--;)
 		dest->digits[i] = 0;
 
 	dest->size = src->size + fill + 1;
-	if(dest->size && !dest->digits[dest->size-1])
+	if(!dest->digits[dest->size-1])
 		--dest->size;
 
-	dest->sign =  src->sign;
+	dest->sign = src->sign;
+}
+
+void vi_next_prime_assign_VarInt(
+	VarInt * dest,
+	VarInt const * start)
+{
+	assert(dest != NULL);
+	assert(start != NULL);
+
+	if(vi_is_even_VarInt(start))
+	{
+		vi_inc_assign_VarInt(dest, start);
+	} else
+		vi_copy_assign_VarInt(dest, start);
+
+	while(!vi_is_prime_quick_VarInt(dest))
+	{
+		// increment in steps of two.
+		vi_add_assign_VarInt(dest, dest, &varint_two);
+	}
+}
+
+int vi_is_even_VarInt(
+	VarInt const * this)
+{
+	assert(this != NULL);
+
+	if(!this->size)
+		return 1;
+	else
+		return (this->digits[0] & 1) == 0;
 }

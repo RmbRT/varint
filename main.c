@@ -4,11 +4,10 @@
 #include <string.h>
 #include <stdlib.h>
 
-void main(
+int main(
 	int argc,
 	char ** argv)
 {
-
 	if(argc == 2)
 	{
 		VarInt a;
@@ -63,7 +62,7 @@ void main(
 			puts(str);
 			vi_free((void**)&str);
 			vi_destroy_VarInt(&x);
-		} else if(!strcmp(argv[1], "prime"))
+		} else if(!strcmp(argv[1], "isprime"))
 		{
 			VarInt p;
 			vi_create_from_hex_VarInt(
@@ -74,6 +73,21 @@ void main(
 			puts(vi_is_prime_quick_VarInt(&p) ? "1":"0");
 			vi_destroy_VarInt(&p);
 
+		} else if(!strcmp(argv[1], "nextprime"))
+		{
+			VarInt p;
+			vi_create_from_hex_VarInt(
+				&p,
+				argv[2],
+				strlen(argv[2]));
+
+			vi_next_prime_assign_VarInt(
+				&p, &p);
+
+			char * str = vi_to_string_VarInt(&p);
+			puts(str);
+			free(str);
+			vi_destroy_VarInt(&p);
 		} else
 		{
 			fputs("invalid arguments.", stderr);
@@ -181,4 +195,6 @@ destroy_1:
 			vi_destroy_VarInt(&result);
 		}
 	}
+
+	return 0;
 }
