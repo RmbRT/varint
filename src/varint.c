@@ -127,7 +127,7 @@ void vi_assign_random_VarInt(
 	assert(this != NULL);
 
 	size_t const min_cap = length / sizeof(digit_t)
-			+ (length & ((1<<sizeof(digit_t)) -1) ? 1 : 0);
+			+ (length & (sizeof(digit_t) -1) ? 1 : 0);
 
 	this->sign = kPos;
 	this->size = 0;
@@ -454,8 +454,9 @@ static void digit_mul(
 		carry2,
 		high,
 		&carry2);
-#endif
+
 	assert((carry | carry2) == 0);
+#endif
 }
 
 void vi_mul_create_VarInt(
@@ -560,7 +561,7 @@ void vi_mul_assign_VarInt(
 			if(temp.digits[j])
 				temp.size = j + 1;
 
-		#pragma omp critical
+		#pragma omp critical(accum_mul)
 		{
 		// dest += temp;
 		vi_add_assign_VarInt(
@@ -967,7 +968,6 @@ void vi_pow_mod_assign_VarInt(
 			vi_div_mod_assign_VarInt(NULL, &mul, &mul, mod);
 		}
 	}
-
 	vi_destroy_VarInt(&mul);
 }
 
@@ -1031,6 +1031,7 @@ static sign_t internal_sub_assign_VarInt(
 	}
 
 	VarInt const * longer, * shorter;
+
 
 	if(srca->size >= srcb->size)
 	{
@@ -1203,6 +1204,7 @@ char * vi_to_string_VarInt(
 	{
 		*str='0';
 	}
+	*++str = '\0';
 
 	return ret;
 }
@@ -1281,7 +1283,6 @@ static int fermat(
 	assert(vi_compare_VarInt(base, p) < 0);
 
 
-
 	VarInt temp = varint_zero;
 	vi_dec_assign_VarInt(
 		&temp,
@@ -1312,6 +1313,8 @@ int vi_is_prime_quick_VarInt(
 	int maybe_prime = 1;
 	VarInt n;
 
+
+	//#pragma omp critical(loop_prime)
 	#pragma omp parallel
 	#pragma omp single nowait
 	for(vi_sub_create_VarInt(&n, this, &varint_one);
@@ -1328,7 +1331,6 @@ int vi_is_prime_quick_VarInt(
 
 		#pragma omp task shared(maybe_prime)
 		{
-
 			if(maybe_prime && !fermat(
 #ifdef _OPENMP
 				&temp_n,
@@ -1339,12 +1341,11 @@ int vi_is_prime_quick_VarInt(
 			{
 				maybe_prime = 0;
 			}
+
 #ifdef _OPENMP
 			vi_destroy_VarInt(&temp_n);
 #endif
-		}
-
-		
+		}	
 	}
 
 	#pragma omp taskwait

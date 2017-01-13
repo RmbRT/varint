@@ -9,6 +9,10 @@
 extern "C" {
 #endif
 
+void vi_set_default_heap_size(size_t capacity);
+
+
+void vi_malloc(void ** ptr, size_t typesize, size_t count);
 void vi_calloc(void ** ptr, size_t typesize, size_t count);
 void vi_realloc(void ** ptr, size_t typesize, size_t count);
 void vi_free(void ** ptr);

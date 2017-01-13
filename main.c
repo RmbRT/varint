@@ -8,6 +8,8 @@ int main(
 	int argc,
 	char ** argv)
 {
+	// allocate 4KB heaps by default.
+	vi_set_default_heap_size(1 << 15);
 	if(argc == 2)
 	{
 		VarInt a;
@@ -86,7 +88,7 @@ int main(
 
 			char * str = vi_to_string_VarInt(&p);
 			puts(str);
-			free(str);
+			vi_free((void**)&str);
 			vi_destroy_VarInt(&p);
 		} else
 		{

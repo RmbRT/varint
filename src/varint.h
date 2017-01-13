@@ -1,5 +1,5 @@
-#ifndef __bigint_h_defined
-#define __bigint_h_defined
+#ifndef __varint_varint_h_defined
+#define __varint_varint_h_defined
 
 #include <limits.h>
 #include "defines.h"
@@ -9,8 +9,8 @@
 extern "C" {
 #endif
 
-typedef unsigned long digit_t;
-#define DIGIT_MAX ULONG_MAX
+typedef unsigned char digit_t;
+#define DIGIT_MAX UCHAR_MAX
 #define DIGIT_BITS (sizeof(digit_t) * 8)
 
 typedef enum {
