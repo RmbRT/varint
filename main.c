@@ -9,7 +9,7 @@ int main(
 	char ** argv)
 {
 	// allocate 4KB heaps by default.
-	vi_set_default_heap_size(1 << 15);
+	vi_set_default_heap_size(4096);
 	if(argc == 2)
 	{
 		VarInt a;
@@ -197,6 +197,8 @@ destroy_1:
 			vi_destroy_VarInt(&result);
 		}
 	}
+
+	vi_destroy_heap();
 
 	return 0;
 }

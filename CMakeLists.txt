@@ -4,8 +4,8 @@ project(VariableInteger)
 # Remove -DUSE_IA to remove custom inline assembly for x86.
 # Remove -DNDEBUG to enable assertions.
 # Remove -fopenmp to remove Open MP support.
-# Remove -DCUSTOM_HEAP to remove the (currently broken) custom heap.
-set(CMAKE_C_FLAGS "-std=c99 -DUSA_IA -Wall -fopenmp -DCUSTOM_HEAP -Wno-unused-function -Wno-unknown-pragmas -Werror -g")
+# Remove -DCUSTOM_HEAP to remove the ([currently broken in combination with openmp] and [slower than the default heap]) custom heap.
+set(CMAKE_C_FLAGS "-std=c99 -DUSA_IA -fopenmp -Wall -Wno-unused-function -Wno-unknown-pragmas -Werror -g")
 
 # Select all source files.
 file(GLOB_RECURSE vi_sources ./src/*.c)

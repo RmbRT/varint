@@ -18,6 +18,8 @@ void vi_realloc(void ** ptr, size_t typesize, size_t count);
 void vi_free(void ** ptr);
 void vi_copy(void ** ptr, void const * src, size_t typesize, size_t count);
 
+void vi_destroy_heap();
+
 #ifdef __cplusplus
 }
 #endif

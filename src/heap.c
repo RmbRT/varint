@@ -24,8 +24,7 @@ Entry * vi_entry_of_block(
 	return (Entry*)(block - sizeof(Entry));
 }
 
-
-static inline uintptr_t align(
+static inline uintptr_t align_up(
 	uintptr_t ptr,
 	size_t size)
 {
@@ -36,21 +35,24 @@ static inline uintptr_t align(
 		return ptr;
 }
 
+static inline uintptr_t align_down(
+	uintptr_t ptr,
+	size_t size)
+{
+	return ptr - (ptr % size);
+}
+
 size_t vi_hole_Entry(
 	Entry * this)
 {
 	assert(this != NULL);
 
-	uintptr_t end = align(vi_end_Entry(this), sizeof(Entry));
+	uintptr_t end = vi_end_Entry(this);
+	uintptr_t limit = (this->next)
+		? (uintptr_t) this->next
+		: this->heap->end;
 
-	if(this->next)
-		return (uintptr_t) this->next > end
-			? (uintptr_t) this->next - end
-			: 0;
-	else
-		return this->heap->end > end
-			? this->heap->end - end
-			: 0;
+	return limit - align_up(end, sizeof(Entry));
 }
 
 void vi_create_Entry(
@@ -135,17 +137,31 @@ void vi_destroy_Heap(
 }
 
 
+static Entry * last_possible_entry(
+	Heap const * this,
+	size_t size)
+{
+	assert(this != NULL);
+	assert(size < this->end - this->start);
+
+	uintptr_t begin = align_down(this->end - size, sizeof(Entry));
+	return vi_entry_of_block(begin);
+}
+
 void * vi_alloc_Heap(
 	Heap * const this,
 	size_t size)
 {
 	assert(this != NULL);
+	assert(this->start != 0);
+	assert(this->end != 0);
 
 	// check for empty heap.
 	if(!this->blocks)
 	{
-		Entry * entry = (Entry*) align(this->start, sizeof(Entry));
+		Entry * entry = (Entry*) align_up(this->start, sizeof(Entry));
 		uintptr_t begin = vi_begin_Entry(entry);
+		// Is there enough space in the empty heap for this entry?
 		if(begin + size < this->end)
 		{
 			this->first = this->last = entry;
@@ -157,7 +173,7 @@ void * vi_alloc_Heap(
 				size);
 			++this->blocks;
 			return (void*) begin;
-		} else
+		} else // The entire heap cannot hold the requested block, return null.
 		{
 			return NULL;
 		}
@@ -165,38 +181,26 @@ void * vi_alloc_Heap(
 
 	// heap is not empty.
 
-	Entry * left = (Entry*) align(this->start, sizeof(Entry));
+	Entry * left = (Entry*) align_up(this->start, sizeof(Entry));
 
 	// check before the first element.
-	if(this->first > left)
+	if((left < this->first)
+	&& ((uintptr_t)this->first - vi_begin_Entry(left) > size))
 	{
-		if((uintptr_t)this->first - vi_begin_Entry(left) > size)
-		{
-			vi_create_Entry(
-				left,
-				this,
-				NULL,
-				this->first,
-				size);
+		vi_create_Entry(
+			left,
+			this,
+			NULL,
+			this->first,
+			size);
 
-			this->first = left;
-			++this->blocks;
-			return (void*)vi_begin_Entry(left);
-		} else
-		{
-			left = this->first;
-		}
-	}
+		this->first = left;
+		++this->blocks;
+		return (void*) vi_begin_Entry(left);
+	} else
+		left = this->first;
 
-	Entry * right;
-
-	{
-		size_t align_e_s = align(this->end - size, sizeof(Entry));
-		if(this->end - align_e_s < size)
-			align_e_s -= sizeof(Entry);
-
-		right = vi_entry_of_block(align_e_s);
-	}
+	Entry * right = (Entry*) last_possible_entry(this, size);
 
 	// can it fit after the last entry?
 	if((uintptr_t)right >= vi_end_Entry(this->last))
@@ -216,14 +220,14 @@ void * vi_alloc_Heap(
 		right = this->last;
 	}
 
-	while(left <= right)
+	while(left <= right && (left || right))
 	{
 		// check before the right element.
-		if(right->previous)
+		if(right && right->previous)
 		{
 			if(vi_hole_Entry(right->previous) >= sizeof(Entry) + size)
 			{
-				Entry * insert = (Entry*) align(vi_end_Entry(right->previous), sizeof(Entry));
+				Entry * insert = (Entry*) align_up(vi_end_Entry(right->previous), sizeof(Entry));
 				vi_create_Entry(
 					insert,
 					this,
@@ -231,17 +235,17 @@ void * vi_alloc_Heap(
 					right,
 					size);
 				++this->blocks;
-				return (void*)vi_begin_Entry(insert);
+				return (void*) vi_begin_Entry(insert);
 			} else
 				right = right->previous;
 		}
 
 		// check after the left element.
-		if(left->next)
+		if(left && left->next)
 		{
 			if(vi_hole_Entry(left) >= sizeof(Entry) + size)
 			{
-				Entry * insert = (Entry*) align(vi_end_Entry(left), sizeof(Entry));
+				Entry * insert = (Entry*) align_up(vi_end_Entry(left), sizeof(Entry));
 				vi_create_Entry(
 					insert,
 					this,
@@ -249,12 +253,12 @@ void * vi_alloc_Heap(
 					left->next,
 					size);
 				++this->blocks;
-				return (void*)vi_begin_Entry(insert);
+				return (void*) vi_begin_Entry(insert);
 			} else
 				left = left->next;
 		}
 	}
-	
+
 	return NULL;
 }
 

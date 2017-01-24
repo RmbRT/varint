@@ -73,7 +73,7 @@ static void _realloc(void ** ptr, size_t typesize, size_t count)
 	if(*ptr)
 	{
 		Entry * entry = vi_entry_of_block((uintptr_t)*ptr);
-		
+
 		// little sanity check.
 		assert(entry->heap != NULL);
 		assert(!entry->previous || entry->previous->next == entry);
@@ -143,4 +143,16 @@ void vi_copy(void ** ptr, void const * src, size_t typesize, size_t count)
 
 	vi_malloc(ptr, typesize, count);
 	memcpy(*ptr, src, typesize * count);
+}
+
+void vi_destroy_heap()
+{
+#ifdef CUSTOM_HEAP
+	#pragma omp critical(heap)
+	if(heap_list_initialised)
+	{
+		vi_destroy_HeapList(&heap_list);
+		heap_list_initialised = 0;
+	}
+#endif
 }

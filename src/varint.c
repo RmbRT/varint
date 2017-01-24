@@ -55,7 +55,8 @@ void vi_create_from_int_VarInt(
 
 	vi_calloc_digit(
 		&this->digits,
-		this->capacity = sizeof(int) / sizeof(digit_t));
+		this->capacity = (sizeof(int) / sizeof(digit_t))
+			+ !!(sizeof(int) % sizeof(digit_t)));
 
 	for(size_t d = 0; d < sizeof(int) / sizeof(digit_t); d++)
 	{
@@ -729,7 +730,7 @@ void vi_div_mod_assign_VarInt(
 			// quo += 1 << shift.
 			vi_shl_assign_VarInt(&quo_inc, &varint_one, shift);
 			vi_add_assign_VarInt(quo, quo, &quo_inc);
-			
+
 			if(shift > 0) // can we still continue?
 			{
 				--shift;
@@ -745,6 +746,7 @@ void vi_div_mod_assign_VarInt(
 
 	vi_destroy_VarInt(&decrease);
 	vi_destroy_VarInt(&count_down);
+	vi_destroy_VarInt(&quo_inc);
 
 	rem->sign = srca->sign;
 	quo->sign = (srca->sign != srcb->sign);
@@ -844,6 +846,7 @@ void vi_pow_assign_VarInt(
 		vi_pow_assign_VarInt(&dest_copy, base, exp);
 		vi_destroy_VarInt(dest);
 		*dest = dest_copy;
+		return;
 	}
 
 
@@ -1329,7 +1332,7 @@ int vi_is_prime_quick_VarInt(
 		vi_copy_create_VarInt(&temp_n, &n);
 #endif
 
-		#pragma omp task shared(maybe_prime)
+		#pragma omp task shared(maybe_prime) firstprivate(temp_n)
 		{
 			if(maybe_prime && !fermat(
 #ifdef _OPENMP
@@ -1345,7 +1348,7 @@ int vi_is_prime_quick_VarInt(
 #ifdef _OPENMP
 			vi_destroy_VarInt(&temp_n);
 #endif
-		}	
+		}
 	}
 
 	#pragma omp taskwait
