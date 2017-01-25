@@ -4,6 +4,46 @@
 #include <string.h>
 #include <stdlib.h>
 
+struct Command {
+	char const * name;
+	char const * description;
+};
+
+static struct Command const commands[] = {
+	{"--help", "Displays this text."},
+	{"<number>",
+		"outputs the given hexadecimal number. The number must have the following format (regex): '(+|-)?[0-9a-fA-F]+'."},
+	{"<number> <op> <number>",
+		"Binary operation on two hexadecimal integers. <op> can be one of the following:\n"
+		"\t+\tAddition\n"
+		"\t-\tSubtraction\n"
+		"\tx\tMultiplication\n"
+		"\t:\tDivision (with remainder). The output format is \"<number> | <number>\", where the first number is the quotient, and the second number is the remainder.\n"
+		"\t^\tPower function"},
+	{"<number> (shr|shl) <decimal>",
+		"Performs a bitwise unsigned right/left shift on the given hexadecimal number by an amount of the given decimal number. The decimal number must fit into an integer." },
+	{"<number> ^ <number> % <number>",
+		"Computes pow(a,b) mod n, where a, b, and n are the given hexadecimal numbers."},
+	{"isprime <number>", "Outputs 1 if the given hexadecimal integer is a prime number, otherwise 0."},
+	{"nextprime <number>", "Outputs the closest prime number greater than or equal to the given hexadecimal number."},
+	{"rand <decimal>", "Generates a random number with the requested length (in bytes). The decimal number must fit into an integer."},
+	{"randprime <decimal>", "Generates a random prime number with the requested length (in bytes). The decimal number must fit into an integer."}
+};
+
+void help(char const * progname, FILE * file)
+{
+	for(size_t i = 0; i < sizeof(commands) / sizeof(*commands); i++)
+	{
+		fprintf(
+			file,
+			"command: %s %s\nexplanation: %s\n",
+			progname,
+			commands[i].name,
+			commands[i].description);
+	}
+}
+
+
 int main(
 	int argc,
 	char ** argv)
@@ -12,15 +52,21 @@ int main(
 	vi_set_default_heap_size(4096);
 	if(argc == 2)
 	{
-		VarInt a;
-		vi_create_from_hex_VarInt(
-			&a,
-			argv[1],
-			strlen(argv[1]));
-		char * str = vi_to_string_VarInt(&a);
-		puts(str);
-		vi_free((void**)&str);
-		vi_destroy_VarInt(&a);
+		if(!strcmp(argv[1], "--help"))
+		{
+			help(argv[0], stdout);
+		} else
+		{
+			VarInt a;
+			vi_create_from_hex_VarInt(
+				&a,
+				argv[1],
+				strlen(argv[1]));
+			char * str = vi_to_string_VarInt(&a);
+			puts(str);
+			vi_free((void**)&str);
+			vi_destroy_VarInt(&a);
+		}
 	} else if(argc == 3)
 	{
 		if(!strcmp(argv[1], "rand"))
@@ -28,7 +74,8 @@ int main(
 			size_t len;
 			if(1 != sscanf(argv[2], "%zu", &len))
 			{
-				fputs("second argument should be a decimal number!", stderr);
+				fputs("second argument to 'rand' should be a decimal number!", stderr);
+				help(*argv, stderr);
 				exit(EXIT_FAILURE);
 			}
 
@@ -40,7 +87,27 @@ int main(
 
 			vi_free((void**)&str);
 			vi_destroy_VarInt(&rand);
-		} else if(!strcmp(argv[1], "text"))
+		} else if(!strcmp(argv[1], "randprime"))
+		{
+			size_t len;
+			if(1 != sscanf(argv[2], "%zu", &len))
+			{
+				fputs("second argument should be a decimal number!", stderr);
+				help(*argv, stderr);
+				exit(EXIT_FAILURE);
+			}
+
+			VarInt rand;
+			vi_create_random_VarInt(&rand, len);
+
+			vi_next_prime_assign_VarInt(&rand, &rand);
+
+			char * str = vi_to_string_VarInt(&rand);
+			puts(str);
+
+			vi_free((void**)&str);
+			vi_destroy_VarInt(&rand);
+		}  else if(!strcmp(argv[1], "text"))
 		{
 			size_t len = strlen(argv[2]);
 			size_t cap = len / sizeof(digit_t) + (len % sizeof(digit_t) ? 1 : 0);
@@ -93,6 +160,7 @@ int main(
 		} else
 		{
 			fputs("invalid arguments.", stderr);
+			help(*argv, stderr);
 		}
 	} else if(argc == 4)
 	{
@@ -147,13 +215,14 @@ int main(
 			vi_create_VarInt(&result);
 
 			vi_shr_assign_VarInt(&result, &a, atoi(argv[3]));
+		} else if(!strcmp(argv[2], "shl"))
+		{
+			vi_create_VarInt(&result);
+			vi_shl_assign_VarInt(&result, &a, atoi(argv[3]));
 		} else
 		{
-			fprintf(
-				stderr,
-				"Invalid command line argument '%s'\n"
-				"usage: %s [+|-]hex1 [(+|-|x|:|^) [+|-]hex2]\n",
-				argv[2], argv[0]);
+			fputs("invalid arguments", stderr);
+			help(*argv, stderr);
 			goto destroy_1;
 		}
 
@@ -195,6 +264,10 @@ destroy_1:
 			vi_destroy_VarInt(&exp);
 			vi_destroy_VarInt(&mod);
 			vi_destroy_VarInt(&result);
+		} else
+		{
+			fputs("invalid arguments", stderr);
+			help(*argv, stderr);
 		}
 	}
 
